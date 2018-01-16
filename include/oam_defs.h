@@ -140,6 +140,15 @@ typedef enum
     OPER_HALF_DUPLEX /* FIXME:half */
 } oam_oper_e;
 
+/**
+ * 
+ * ST_FAULT:
+ *      (unidirecional support) While local_link_status is set to FAIL, the DTE 
+ *      will remain in this state indicating to the remote DTE there is link fault. 
+ *      This is accomplished by sending Information OAMPDUs once per second with 
+ *      the Link Fault bit of the Flags field set and no Information TLVs in the 
+ *      Data field. 
+ */
 typedef enum
 {
     ST_DISABLED = OPER_DISABLED,

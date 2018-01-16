@@ -34,34 +34,18 @@ static fsm_port_s *g_fsm_port = NULL;
  * local functions
  *--------------------------------------------------------------------------
  */
-static void set_remote_state_valid(fsm_port_s *p, BOOLEAN valid)
-{
-    p->remote_state_valid = valid;
 
-    if (p->remote_state_valid == FALSE)
-    {
-        p->local_stable = FALSE;
-        p->local_satisfied = FALSE;
-        p->remote_stable = FALSE;
-        p->remote_state_valid = FALSE;
 
-        PDU_FLAGS_R_CLEAR(p->send_flags);
-
-        /* clear peer mac */
-        memset(&p->peer, 0, sizeof(p->peer));
-    }
-}
-
-void fill_local_info_tlv(ifindex_s ifindex, oam_pdu_info_t *p_tlv)
+void fill_local_info_tlv(ifindex_s ifindex, oam_info_tlv_s *p_tlv)
 {
     fsm_port_s *p;
 
     p = eoam_fsm_port(ifindex);
 
-    memset(p_tlv, 0, sizeof(oam_pdu_info_t));
+    memset(p_tlv, 0, sizeof(oam_info_tlv_s));
 
     p_tlv->hdr.type = INFO_TLV_TYPE_LOCAL;
-    p_tlv->hdr.length = sizeof(oam_pdu_info_t); /* NOTE, one byte field */
+    p_tlv->hdr.length = sizeof(oam_info_tlv_s); /* NOTE, one byte field */
     p_tlv->version = g_fsm_init_params.oam_version;
 
     p_tlv->tlv_revision = htons(p->cfg.oamConfigRevision);
@@ -103,35 +87,26 @@ void fill_local_info_tlv(ifindex_s ifindex, oam_pdu_info_t *p_tlv)
  * eoam_fsm_send_info_pdu
  * depens on current state to send info oam pdu
  */
-void eoam_fsm_send_info_pdu(ifindex_s ifindex, oam_state_e next_state)
+void eoam_fsm_send_info_pdu(ifindex_s ifindex)
 {
     fsm_port_s *p = eoam_fsm_port(ifindex);
-    oam_pdu_info_t tlv[2];
+    oam_info_tlv_s tlv[2];
     char buf[128];
     BOOLEAN info_sent = FALSE;
 
     fill_local_info_tlv(ifindex, &tlv[0]); /* TBD */
 
     xdbg_log(XDBG_DEBUG, "[%2d] send info pdu: %s->%s (rev:%d -%s)", ifindex,
-             eoam_str_fsm_state(p->cur_state), eoam_str_fsm_state(next_state), 
+             eoam_str_fsm_state(p->cur_state), eoam_str_fsm_state(p->cur_state),
              ntohs(tlv[0].tlv_revision),
              eoam_str_info_flags(p->send_flags, buf));
 
-    if (p->cur_state != next_state)
-    {
-        xdbg_log(XDBG_DEBUG, "[%2d] >>>>>>>>>: %s->%s (rev:%d -%s)", ifindex,
-                eoam_str_fsm_state(p->cur_state), eoam_str_fsm_state(next_state), 
-                ntohs(tlv[0].tlv_revision),
-                eoam_str_info_flags(p->send_flags, buf));
-        assert(1);
-    }
-
-    switch (next_state)
+    switch (p->cur_state)
     {
     case ST_ACTIVE_SEND_LOCAL:
 
         eoam_pdu_send(ifindex, PDU_CODE_INFO, p->send_flags,
-                      (uint8_t *)tlv, sizeof(oam_pdu_info_t));
+                      (uint8_t *)tlv, sizeof(oam_info_tlv_s));
         info_sent = TRUE;
         break;
     case ST_PASSIVE_WAIT:
@@ -141,7 +116,7 @@ void eoam_fsm_send_info_pdu(ifindex_s ifindex, oam_state_e next_state)
     case ST_SEND_LOCAL_REMOTE_OK:
     case ST_SEND_ANY:
 
-        memcpy(&tlv[1], &p->peer_tlv, sizeof(oam_pdu_info_t));
+        memcpy(&tlv[1], &p->peer_tlv, sizeof(oam_info_tlv_s));
 
         if ((p->send_flags &
              (PDU_FLAGS_R_EVAL | PDU_FLAGS_R_STABLE)) == 0)
@@ -150,7 +125,7 @@ void eoam_fsm_send_info_pdu(ifindex_s ifindex, oam_state_e next_state)
 
             xdbg_log(XDBG_INFO, "[%2d] no remote send flags state: %s, flags: %s !!!",
                      ifindex,
-                     eoam_str_fsm_state(next_state),
+                     eoam_str_fsm_state(p->cur_state),
                      eoam_str_info_flags(p->send_flags, buf));
         }
 
@@ -160,12 +135,12 @@ void eoam_fsm_send_info_pdu(ifindex_s ifindex, oam_state_e next_state)
         break;
     default:
         xdbg_log(XDBG_ERR, "[%2d] state %s not allowed to send info pdu !!",
-                 ifindex, eoam_str_fsm_state(next_state));
+                 ifindex, eoam_str_fsm_state(p->cur_state));
         break;
     }
 
     /* save local tlv and update counter */
-    memcpy(&p->local_tlv, &tlv[0], sizeof(oam_pdu_info_t));
+    memcpy(&p->local_tlv, &tlv[0], sizeof(oam_info_tlv_s));
 
     if (info_sent)
     {
@@ -389,6 +364,7 @@ oam_state_e eoam_fsm_pdu_timeout(ifindex_s ifindex)
 {
     fsm_port_s *p = eoam_fsm_port(ifindex);
     oam_state_e old_state;
+    char zero_mac[] = {0, 0, 0, 0, 0, 0};
 
     if (p == NULL)
     {
@@ -427,12 +403,8 @@ oam_state_e eoam_fsm_pdu_timeout(ifindex_s ifindex)
         /* no any pdu went out, so tx info pdu to keep session
          * handle command retransmisstion
          */
-#ifdef RERX_LPBK
-        if (!eoam_fsm_pdu_retransmission(ifindex))
-#endif
-        {
-            eoam_fsm_send_info_pdu(ifindex, old_state);
-        }
+        if (p->local_pdu >= PDU_INFO )
+            eoam_fsm_send_info_pdu(ifindex);
     }
     else
     {
@@ -445,19 +417,19 @@ oam_state_e eoam_fsm_pdu_timeout(ifindex_s ifindex)
     /* handle rx lost link timer */
 
     /* process lost link timer, if has ever received peer's info pdu
-     * FIXME: total wrong ?????
      */
-    if (p->remote_state_valid)
+
+    if (memcmp(p->peer_mac, zero_mac, MAC_ADRS_SIZE) != 0)
     {
         struct timeval cur_time;
 
         gettimeofday(&cur_time, NULL);
         if (xnet_time_diff(&p->last_rx, &cur_time) >= p->cfg.oam_timeout)
         {
-            xdbg_log(XDBG_INFO, "lost link timer down (timeout %d)",
-                     p->cfg.oam_timeout);
+            xdbg_log(XDBG_INFO, "[%2d] lost link timer down (timeout %d)",
+                     ifindex, p->cfg.oam_timeout);
 
-            eoam_fsm_step(ifindex, EV_LINK_STATUS, NULL);
+            eoam_fsm_step(ifindex, EV_LOST_TIMER, NULL);
             /* renew timer */
             gettimeofday(&p->last_rx, NULL);
         }
@@ -478,33 +450,26 @@ static oam_state_e handle_oam_mode(ifindex_s ifindex, void *param)
     oam_state_e next = p->cur_state;
     dot3_oam_cfg_s *p_cfg = (dot3_oam_cfg_s *) param;
 
-#if 0
-    xdbg_log(XDBG_INFO, "[%2d] handle_oam_mode: new admin %d, mode %d",
-             ifindex, p_cfg->oamAdminState, p_cfg->oamMode);
-             
-#endif
-
-    xdbg_log(XDBG_INFO, "[%2d] oam admin: %s-->%s mode: %s-->%s (tlv rev %d)",
+    if (p_cfg->oamAdminState == OAM_ADMIN_DISABLED)
+    {
+        next = ST_FAULT;
+    }
+    else
+    {
+        if (p_cfg->oamMode == OAM_MODE_PASSIVE)
+            next = ST_PASSIVE_WAIT;
+        else
+            next = ST_ACTIVE_SEND_LOCAL;
+    }
+    
+    xdbg_log(XDBG_INFO, "[%2d] adm:%s->%s mo:%s->%s (rev %d), next=%s",
              ifindex, 
              eoam_str_onoff(p->cfg.oamAdminState), 
              eoam_str_onoff(p_cfg->oamAdminState),
              eoam_str_oam_mode(p->cfg.oamMode), 
              eoam_str_oam_mode(p_cfg->oamMode),
-             p->cfg.oamConfigRevision);
-
-    if (p->cfg.oamAdminState != p_cfg->oamAdminState)
-    {
-        if (p_cfg->oamAdminState == OAM_ADMIN_DISABLED)
-        {
-            next = ST_FAULT;
-        }
-    }
-
-    if (next == ST_ACTIVE_SEND_LOCAL && p_cfg->oamMode == OAM_MODE_PASSIVE)
-        next = ST_PASSIVE_WAIT;
-
-    if (next == ST_PASSIVE_WAIT && p_cfg->oamMode == OAM_MODE_ACTIVE)
-        next = ST_ACTIVE_SEND_LOCAL;
+             p->cfg.oamConfigRevision,
+             eoam_str_fsm_state(next));
 
     return next;
 }
@@ -514,9 +479,7 @@ static oam_state_e handle_link_status(ifindex_s ifindex, void *param)
     oam_state_e next;
     fsm_port_s *p = eoam_fsm_port(ifindex);
 
-    if (param)
-    {
-    }
+    if (param) {}
 
     if (eoam_cout_link_status(ifindex))
     {
@@ -526,17 +489,11 @@ static oam_state_e handle_link_status(ifindex_s ifindex, void *param)
             next = ST_PASSIVE_WAIT;
     }
     else
+    {
         next = ST_FAULT;
+    }
 
-    set_remote_state_valid(p, FALSE);
 
-    /* FIXME: lpbk */
-    if (p->lpbk.oamLoopbackStatus == REMOTE_LPBK)
-        p->lpbk.oamLoopbackStatus = INIT_LPBK; /* forec re-tx */
-    else
-        p->lpbk.oamLoopbackStatus = NO_LPBK;
-
-    eoam_cout_lpbk_req(ifindex, p->lpbk.oamLoopbackStatus); /* set lpbk */
 
     return next;
 }
@@ -551,58 +508,7 @@ void eoam_fsm_set_state(fsm_port_s *p, oam_state_e state)
         p->cfg.oamOperStatus = (oam_oper_e)state;
 }
 
-/**
- * eoam_fsm_reset
- *  restart state machine (config is not going to change)
- */
-oam_state_e eoam_fsm_reset(ifindex_s ifindex, void *param)
-{
-    oam_state_e next = ST_FAULT;
-    dot3_oam_cfg_s *p_cfg = (dot3_oam_cfg_s *) param;
-    fsm_port_s *p = eoam_fsm_port(ifindex);
 
-    eoam_fsm_set_state(p, ST_FAULT);
-    //p->cur_state = ST_FAULT; /* FIXME */
-
-    set_remote_state_valid(p, FALSE);
-
-    gettimeofday(&p->last_rx, NULL);
-
-    PDU_FLAGS_R_CLEAR(p->send_flags);
-
-    if (eoam_cout_link_status(ifindex))
-    {
-        if (p_cfg->oamAdminState == OAM_ADMIN_DISABLED)
-            next = ST_FAULT;
-        else
-        if (p_cfg->oamMode == OAM_MODE_ACTIVE)
-            next = ST_ACTIVE_SEND_LOCAL;
-        else
-            next = ST_PASSIVE_WAIT;
-    }
-    else
-    {
-        next = ST_FAULT;
-    }
-
-    p->cfg.oamAdminState = p_cfg->oamAdminState; /* FIXME */
-    p->cfg.oamMode = p_cfg->oamMode; /* FIXME */
-
-    /* FIXME: fill in readonly parts */
-    p->cfg.oamMaxOamPduSize = g_fsm_init_params.max_pdu_size;
-
-    /* FIXME (default config) */
-    p->lpbk.oamLoopbackStatus = NO_LPBK;
-
-    eoam_cout_lpbk_req(ifindex, p->lpbk.oamLoopbackStatus); /* set lpbk */
-
-#if OAM_DEBUG
-    xdbg_log(XDBG_INFO, "eoam_fsm_reset =====> admin %d oam_mode = %d",
-             p->cfg.oamAdminState, p->cfg.oamMode);
-#endif
-
-    return next;
-}
 
 static oam_state_e state_fault(ifindex_s ifindex, oam_fsm_evt_e evt, void *param)
 {
@@ -611,13 +517,15 @@ static oam_state_e state_fault(ifindex_s ifindex, oam_fsm_evt_e evt, void *param
     switch (evt)
     {
     case EV_LINK_STATUS:
+    case EV_LOST_TIMER:
 
         next = handle_link_status(ifindex, param);
 
         break;
     case EV_OAM_MODE:
-        next = eoam_fsm_reset(ifindex, param);
-        /*next = handle_oam_mode(port, param); */
+
+        next = handle_oam_mode(ifindex, param); 
+        
         break;
     case EV_REMOTE_STATE_VALID:
         break;
@@ -637,24 +545,31 @@ static oam_state_e state_send_local(ifindex_s ifindex, oam_fsm_evt_e evt,
 {
     fsm_port_s *p = eoam_fsm_port(ifindex);
     oam_state_e next = ST_ACTIVE_SEND_LOCAL;
+    oam_pdu_hdr_t *p_pdu = (oam_pdu_hdr_t *)param;
+    uint8_t *packet = (uint8_t *)p_pdu;
 
     switch (evt)
     {
     case EV_LINK_STATUS:
-
+    case EV_LOST_TIMER:
         next = handle_link_status(ifindex, param);
 
         break;
     case EV_OAM_MODE:
 
-        /*next = eoam_fsm_reset(port, param); */
         next = handle_oam_mode(ifindex, param);
         break;
     case EV_REMOTE_STATE_VALID:
-        p->local_stable = FALSE;
-        p->remote_stable = FALSE;
-        set_remote_state_valid(p, TRUE);
-        next = ST_SEND_LOCAL_REMOTE;
+        if (param)
+        {
+            /* new session, save remote mac */
+            xdbg_log(XDBG_INFO, "[%2d] send local: save mac %02x:%02x:%02x:%02x:%02x:%02x",
+                     ifindex, packet[6], packet[7], packet[8], packet[9], packet[10], packet[11]);
+
+            p->remote_flags = 0; /* make fsm goto remote_valid */
+            memcpy(p->peer_mac, p_pdu->sa, MAC_ADRS_SIZE);
+            next = ST_SEND_LOCAL_REMOTE;
+        }
         break;
     case EV_LOCAL_SATISFIED:
         break;
@@ -672,29 +587,39 @@ static oam_state_e state_passive_wait(ifindex_s ifindex, oam_fsm_evt_e evt,
 {
     fsm_port_s *p = eoam_fsm_port(ifindex);
     oam_state_e next = ST_PASSIVE_WAIT;
+    oam_pdu_hdr_t *p_pdu = (oam_pdu_hdr_t *)param;
+    uint8_t *packet = (uint8_t *)p_pdu;
 
     switch (evt)
     {
     case EV_LINK_STATUS:
-
+    case EV_LOST_TIMER:
         next = handle_link_status(ifindex, param);
-
         break;
-    case EV_OAM_MODE:
 
-        /*next = eoam_fsm_reset(port, param); */
+    case EV_OAM_MODE:
         next = handle_oam_mode(ifindex, param);
         break;
+
     case EV_REMOTE_STATE_VALID:
-        p->local_stable = FALSE;
-        p->remote_stable = FALSE;
-        set_remote_state_valid(p, TRUE);
-        next = ST_SEND_LOCAL_REMOTE;
+        if (param)
+        {
+            /* new session, save remote mac */
+            xdbg_log(XDBG_INFO, "[%2d] passive wait: save mac %02x:%02x:%02x:%02x:%02x:%02x",
+                     ifindex, packet[6], packet[7], packet[8], packet[9], packet[10], packet[11]);
+
+            p->remote_flags = 0; /* make fsm goto remote_valid */
+            memcpy(p->peer_mac, p_pdu->sa, MAC_ADRS_SIZE);
+            next = ST_SEND_LOCAL_REMOTE;
+        }
         break;
+
     case EV_LOCAL_SATISFIED:
         break;
+
     case EV_REMOTE_STABLE:
         break;
+
     default:
         break;
     }
@@ -711,27 +636,34 @@ static oam_state_e state_send_local_remote(ifindex_s ifindex, oam_fsm_evt_e evt,
     switch (evt)
     {
     case EV_LINK_STATUS:
+    case EV_LOST_TIMER:
         next = handle_link_status(ifindex, param);
-
         break;
-    case EV_OAM_MODE:
 
-        /*next = eoam_fsm_reset(port, param); */
+    case EV_OAM_MODE:
         next = handle_oam_mode(ifindex, param);
         break;
+
     case EV_REMOTE_STATE_VALID:
-        p->local_stable = FALSE;
-        p->remote_stable = FALSE;
-        set_remote_state_valid(p, TRUE);
         next = ST_SEND_LOCAL_REMOTE;
         break;
+
     case EV_LOCAL_SATISFIED:
-        p->local_stable = TRUE;
-        //p->remote_state_valid = TRUE;
-        next = ST_SEND_LOCAL_REMOTE_OK;
+        if (param)
+        {
+            p->local_stable = TRUE;
+            next = ST_SEND_LOCAL_REMOTE_OK;
+        }
+        else
+        {
+            if (p->cfg.oamMode == OAM_MODE_PASSIVE)
+                next = ST_PASSIVE_WAIT; 
+        }
         break;
+
     case EV_REMOTE_STABLE:
         break;
+
     default:
         break;
     }
@@ -748,36 +680,39 @@ static oam_state_e state_send_local_remote_ok(ifindex_s ifindex, oam_fsm_evt_e e
     switch (evt)
     {
     case EV_LINK_STATUS:
+    case EV_LOST_TIMER:
         next = handle_link_status(ifindex, param);
-
         break;
-    case EV_OAM_MODE:
 
-        /*next = eoam_fsm_reset(port, param); */
+    case EV_OAM_MODE:
         next = handle_oam_mode(ifindex, param);
         break;
+
     case EV_REMOTE_STATE_VALID:
-        p->local_stable = FALSE;
-        p->remote_stable = FALSE;
-        set_remote_state_valid(p, TRUE);
-
         next = ST_SEND_LOCAL_REMOTE;
-
         break;
+
     case EV_LOCAL_SATISFIED:
-        p->local_stable = TRUE;
-        p->local_satisfied = TRUE;
-        p->remote_stable = FALSE;
-
-        next = ST_SEND_LOCAL_REMOTE_OK;
+        if (param)
+        {
+            p->local_stable = TRUE;
+            next = ST_SEND_LOCAL_REMOTE_OK;
+        }
+        else
+        {
+            p->local_stable = FALSE;
+            if (p->cfg.oamMode == OAM_MODE_PASSIVE)
+                next = ST_PASSIVE_WAIT; 
+            else        
+                next = ST_SEND_LOCAL_REMOTE;    
+        }
 
         break;
+
     case EV_REMOTE_STABLE:
-        p->remote_stable = TRUE;
-
         next = ST_SEND_ANY;
-
         break;
+
     default:
         break;
     }
@@ -793,31 +728,42 @@ static oam_state_e state_send_any(ifindex_s ifindex, oam_fsm_evt_e evt, void *pa
     switch (evt)
     {
     case EV_LINK_STATUS:
-
+    case EV_LOST_TIMER:
         next = handle_link_status(ifindex, param);
 
         break;
     case EV_OAM_MODE:
 
-        /*next = eoam_fsm_reset(port, param); */
         next = handle_oam_mode(ifindex, param);
         break;
     case EV_REMOTE_STATE_VALID:
         p->local_stable = FALSE;
-        p->remote_stable = FALSE;
-        set_remote_state_valid(p, TRUE);
         next = ST_SEND_LOCAL_REMOTE;
         break;
+
     case EV_LOCAL_SATISFIED:
-        p->local_stable = TRUE;
-        p->local_satisfied = TRUE;
-        p->remote_stable = FALSE;
-        next = ST_SEND_LOCAL_REMOTE_OK;
+        if (param)
+        {
+            p->local_stable = TRUE;
+            next = ST_SEND_LOCAL_REMOTE_OK;
+        }
+        else
+        {
+            p->local_stable = FALSE;
+            if (p->cfg.oamMode == OAM_MODE_PASSIVE)
+                next = ST_PASSIVE_WAIT; 
+            else        
+                next = ST_SEND_LOCAL_REMOTE;    
+        }
         break;
+
     case EV_REMOTE_STABLE:
-        p->remote_stable = TRUE;
-        next = ST_SEND_ANY;
+        if (param)
+            next = ST_SEND_ANY;
+        else
+            next = ST_SEND_LOCAL_REMOTE_OK;
         break;
+        
     default:
         break;
     }
@@ -837,35 +783,55 @@ void eoam_transit_state(ifindex_s ifindex, oam_state_e next_state)
         else
             p->local_pdu = PDU_LF_INFO;
 
-        set_remote_state_valid(p, FALSE);
+#if 1 /* FIXME:valid */
+        p->local_stable = FALSE;
+        PDU_FLAGS_R_CLEAR(p->send_flags);
+        p->remote_flags = 0;
+        memset(&p->peer_mac, 0, sizeof(p->peer_mac));
+#endif
 
         break;
 
     case ST_ACTIVE_SEND_LOCAL:
+        PDU_FLAGS_R_CLEAR(p->send_flags);
         PDU_FLAGS_L_SETV(p->send_flags, PDU_FLAGS_L_EVAL);
+
         p->local_pdu = PDU_INFO;
-        eoam_fsm_send_info_pdu(ifindex, next_state);
+
+#if 1 /* FIXME:valid */
+        p->local_stable = FALSE;
+        p->remote_flags = 0;
+        memset(&p->peer_mac, 0, sizeof(p->peer_mac));
+#endif
+
         break;
 
     case ST_PASSIVE_WAIT:
+#if 1 /* FIXME:valid */
+        PDU_FLAGS_R_CLEAR(p->send_flags);
+        p->local_pdu = PDU_RX_INFO;
+        p->local_stable = FALSE;
+        p->remote_flags = 0;
+        memset(&p->peer_mac, 0, sizeof(p->peer_mac));
+#endif
         break;
 
     case ST_SEND_LOCAL_REMOTE:
         PDU_FLAGS_L_SETV(p->send_flags, PDU_FLAGS_L_EVAL);
         p->local_pdu = PDU_INFO;
-        eoam_fsm_send_info_pdu(ifindex, next_state);
+        p->local_stable = FALSE;
         break;
 
     case ST_SEND_LOCAL_REMOTE_OK:
         PDU_FLAGS_L_SETV(p->send_flags, PDU_FLAGS_L_STABLE);
-        eoam_fsm_send_info_pdu(ifindex, next_state);
+        p->local_stable = TRUE;
 
         break;
 
     case ST_SEND_ANY:
         PDU_FLAGS_L_SETV(p->send_flags, PDU_FLAGS_L_STABLE);
         p->local_pdu = PDU_ANY;
-        eoam_fsm_send_info_pdu(ifindex, next_state);
+
 
         break;
 
@@ -874,7 +840,6 @@ void eoam_transit_state(ifindex_s ifindex, oam_state_e next_state)
     }
 
     eoam_fsm_set_state(p, next_state);
-    //p->cur_state = next_state;
 }
 
 /**
@@ -950,9 +915,7 @@ void eoam_fsm_usr_init(void *xnet, void *param)
         xdbg_log(XDBG_ERR, "eoam_fsm_usr_init: xnet is NULL !!!");
     }
 
-    if (param)
-    {
-    }
+    if (param) {}
 
     xdbg_log(XDBG_INFO, "eoam_fsm_usr_init: init interfaces");
 
@@ -966,7 +929,7 @@ void eoam_fsm_usr_init(void *xnet, void *param)
     for (ifindex = 1; ifindex <= eoam_max_ports(); ifindex++)
     {
         cfg.ifindex = ifindex;
-        eoam_fsm_step(ifindex, EV_OAM_MODE, &cfg);
+        eoam_fsm_step(ifindex, EV_LINK_STATUS, &cfg);
     }
 
     return ;
@@ -1052,6 +1015,11 @@ oam_state_e eoam_fsm_step(ifindex_s ifindex, oam_fsm_evt_e evt, void *param)
                  eoam_str_fsm_state(cur_state), eoam_str_fsm_state(next));
 
         eoam_cout_state_change(ifindex, cur_state, next);
+
+#if 0 /* FIXME:valid */
+        if (next == ST_ACTIVE_SEND_LOCAL)
+            eoam_fsm_send_info_pdu(ifindex);
+#endif
     }
 
     return next;
@@ -1074,8 +1042,6 @@ static void fsm_port_init_params(eoam_params_s *oam_params)
 
         /* fsm */
         eoam_fsm_set_state(p, ST_FAULT);
-        //p->cur_state = ST_FAULT;
-        
 
         /* oam cfg */
         p->cfg.ifindex = ifindex;
@@ -1100,10 +1066,6 @@ static void fsm_port_init_params(eoam_params_s *oam_params)
 
         if (oam_params->support_var_retrieval)
             XBITS_SET_BIT(p->cfg.oamFunctionsSupported, VARIABLE_SUPPORT);
-
-        /* FIXME:peer */
-        p->peer.ifindex = ifindex;
-        p->peer.dot3OamPeerMode = OAM_MODE_UNKNOWN;
 
         /* lpbk */
         p->lpbk.ifindex = ifindex;

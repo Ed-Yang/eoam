@@ -24,7 +24,8 @@ typedef enum
     EV_OAM_MODE,
     EV_REMOTE_STATE_VALID,
     EV_LOCAL_SATISFIED,
-    EV_REMOTE_STABLE
+    EV_REMOTE_STABLE,
+    EV_LOST_TIMER
 } oam_fsm_evt_e;
 
 typedef struct
@@ -63,12 +64,11 @@ typedef struct fsm_port
     oam_state_e cur_state;
     dot3_oam_cfg_s cfg;
     dot3_lpbk_cfg_s lpbk;
-    dot3_peer_s peer;
-    BOOLEAN remote_state_valid;
-    char pmac[MAC_ADRS_SIZE];
-    BOOLEAN local_satisfied;
+    //dot3_peer_s peer;
+    char peer_mac[MAC_ADRS_SIZE];
     BOOLEAN local_stable;
-    BOOLEAN remote_stable;
+    char pmac[MAC_ADRS_SIZE];
+
 
     uint8_t send_flags; /* FIXME */
     /* mux: // STATE_MUX_FWD, STATE_MUX_DISCARD
@@ -83,8 +83,8 @@ typedef struct fsm_port
 
     /* info tlv cache */
 
-    oam_pdu_info_t local_tlv;
-    oam_pdu_info_t peer_tlv; /* remote - valid only if disc.remote_valid is TRUE */
+    oam_info_tlv_s local_tlv;
+    oam_info_tlv_s peer_tlv; /* remote - valid only if disc.remote_valid is TRUE */
     uint8_t remote_flags; /* peer's flags */
 
     oam_port_mux_s mux;
@@ -153,7 +153,7 @@ void eoam_fsm_usr_init(void *xnet, void *param);
 oam_state_e eoam_fsm_pdu_timeout(ifindex_s ifindex);
 
 /* fsm send pdu */
-void eoam_fsm_send_info_pdu(ifindex_s ifindex, oam_state_e next_state);
+void eoam_fsm_send_info_pdu(ifindex_s ifindex);
 void eoam_fsm_send_lpbk_pdu(ifindex_s ifindex, uint8_t cmd);
 void eoam_fsm_send_event_pdu(dot3_evt_log_s *p_evtlog);
 

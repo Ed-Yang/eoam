@@ -14,25 +14,23 @@
  * local functions
  *--------------------------------------------------------------------------
  */
-/** FIXME
- * retrieve_info_pdu
+/** 
+ * _locate_info_tlv
  *
  */
-BOOLEAN retrieve_info_pdu(oam_pdu_hdr_t *p_pdu, size_t pdu_size,
-                          oam_pdu_info_t **peer_local,
-                          oam_pdu_info_t **peer_remote)
+static BOOLEAN _locate_info_tlv(oam_pdu_hdr_t *p_pdu, size_t pdu_size,
+                          oam_info_tlv_s **peer_local,
+                          oam_info_tlv_s **peer_remote)
 {
-    oam_pdu_info_t *p_tlv;
+    oam_info_tlv_s *p_tlv;
     int total;
-
-    if (PDU_FLAGS_L_VALID(p_pdu->flags) == 0)
-        return FALSE;
+    BOOLEAN retval = FALSE;
 
     *peer_local = NULL;
     *peer_remote = NULL;
 
     /* locate local and remote tlv */
-    p_tlv = (oam_pdu_info_t *)(p_pdu + 1);
+    p_tlv = (oam_info_tlv_s *)(p_pdu + 1);
     total = (int)(pdu_size - sizeof(oam_pdu_hdr_t));
 
     while (p_tlv->hdr.type != INFO_TLV_TYPE_END && total > 0 &&
@@ -44,25 +42,26 @@ BOOLEAN retrieve_info_pdu(oam_pdu_hdr_t *p_pdu, size_t pdu_size,
         case INFO_TLV_TYPE_LOCAL: /* my.remote == peer.local ?? */
 
             *peer_local = p_tlv;
+            retval = TRUE;
             break;
 
         case INFO_TLV_TYPE_REMOTE: /* my.local == peer.remote ?? */
 
             /* only accept peer_remote with my oui
-             * FIXME
+             * FIXME:loc
              * if (memcmp(p_tlv->oui, g_sys_mac, 3) == 0)
              */
-        {
             *peer_remote = p_tlv;
-        }
-        break;
+            break;
+        default:
+            break;
         }
 
         total -= p_tlv->hdr.length;
         p_tlv++;
     }
 
-    return TRUE;
+    return retval;
 }
 
 /**
@@ -70,7 +69,7 @@ BOOLEAN retrieve_info_pdu(oam_pdu_hdr_t *p_pdu, size_t pdu_size,
  *
  * FIXME:lpbk
  */
-void check_peer_response(ifindex_s ifindex, oam_pdu_info_t *p_tlv)
+void check_peer_response(ifindex_s ifindex, oam_info_tlv_s *p_tlv)
 {
     fsm_port_s *p = eoam_fsm_port(ifindex);
 
@@ -128,7 +127,7 @@ void _update_lpbk_timer(ifindex_s ifindex, struct timeval *tv)
     return;
 }
 
-static void _refresh_lpbk_timer(ifindex_s ifindex, oam_pdu_info_t *p_tlv)
+static void _refresh_lpbk_timer(ifindex_s ifindex, oam_info_tlv_s *p_tlv)
 {
     fsm_port_s *p = eoam_fsm_port(ifindex);
 
@@ -156,21 +155,82 @@ static void _refresh_lpbk_timer(ifindex_s ifindex, oam_pdu_info_t *p_tlv)
     return;
 }
 
-BOOLEAN process_peer_pdu(ifindex_s ifindex, uint8_t flags, oam_pdu_info_t *p_tlv)
+static void procee_peer_cevt_flags(ifindex_s ifindex, uint8_t flags)
+{
+    fsm_port_s *p = eoam_fsm_port(ifindex);
+    dot3_evt_log_s evt;
+    char info_buf[32], info_buf2[32];
+
+    memset(&evt, 0, sizeof(evt));
+    evt.ifindex = ifindex;
+    evt.dot3OamEventLogTimestamp = xos_get_uptime();
+    evt.dot3OamEventLogLocation = EVT_REMOTE;
+
+    if (p->remote_flags != flags)
+    {
+        if (p->remote_flags)
+            xdbg_log(XDBG_INFO, "[%2d] remote flags changes %s --> %s",
+                    ifindex, 
+                    eoam_str_info_flags(p->remote_flags, info_buf),
+                    eoam_str_info_flags(flags, info_buf2));
+        else
+            xdbg_log(XDBG_INFO, "[%2d] new remote flags %s",
+                    ifindex, 
+                    eoam_str_info_flags(flags, info_buf2));
+    }
+    
+    /* for other router, it might raise multiple events
+        * link failure
+        */
+    if ((flags & PDU_FLAGS_EV_LF) != (p->remote_flags & PDU_FLAGS_EV_LF) )
+    {
+        if ((flags & PDU_FLAGS_EV_LF) != PDU_FLAGS_EV_LF)
+            evt.clear_flag = TRUE;
+
+        evt.dot3OamEventLogType = EVT_LINK_FAULT;
+
+        eoam_log_set_log(&evt); /* FIXME:log */
+
+        eoam_cout_report_evt(&evt); /* need xdev param */
+    }
+
+    /* dying gasp */
+    if ((flags & PDU_FLAGS_EV_DGASP) != (p->remote_flags & PDU_FLAGS_EV_DGASP) )
+    {
+        if ((flags & PDU_FLAGS_EV_DGASP) != PDU_FLAGS_EV_DGASP)
+            evt.clear_flag = TRUE;
+
+        evt.dot3OamEventLogType = EVT_DYING_GASP;
+
+        eoam_log_set_log(&evt); /* FIXME:log */
+
+        eoam_cout_report_evt(&evt); /* need xdev param */
+    }
+
+    /* critical */
+    if ((flags & PDU_FLAGS_EV_CEVT) != (p->remote_flags & PDU_FLAGS_EV_CEVT) )
+    {
+        if ((flags & PDU_FLAGS_EV_CEVT) != PDU_FLAGS_EV_CEVT)
+            evt.clear_flag = TRUE;
+
+        evt.dot3OamEventLogType = EVT_CRITICAL;
+
+        eoam_log_set_log(&evt); /* FIXME:log */
+
+        eoam_cout_report_evt(&evt); /* need xdev param */
+    }
+
+    return ;
+}
+
+static BOOLEAN _eoam_fsm_update(ifindex_s ifindex, oam_pdu_hdr_t *p_pdu, oam_info_tlv_s *p_tlv)
 {
     fsm_port_s *p = eoam_fsm_port(ifindex);
     char info_buf[32];
-    uint8_t rmt_flags = 0;
-
-    if ((flags & (PDU_FLAGS_L_EVAL | PDU_FLAGS_L_STABLE)) == 0)
-    {
-        xdbg_log(XDBG_ERR, "invalid peer pdu flags (0x02x)", flags);
-        return FALSE;
-    }
 
     xdbg_log(XDBG_DEBUG, "[%2d] rx tlv len %d rev %d, fl %s, cfg %02x, st %s",
              ifindex, p_tlv->hdr.length, ntohs(p_tlv->tlv_revision),
-             eoam_str_info_flags(flags, info_buf),
+             eoam_str_info_flags(p_pdu->flags, info_buf),
              p_tlv->config, eoam_str_info_state(p_tlv->state));
 
     /* lpbk timer */
@@ -207,93 +267,6 @@ BOOLEAN process_peer_pdu(ifindex_s ifindex, uint8_t flags, oam_pdu_info_t *p_tlv
         /* check state (lpbk) */
         if (p->peer_tlv.state != p_tlv->state)
             check_peer_response(ifindex, p_tlv);
-    }
-
-    /* copy tlv */
-    memcpy(&p->peer_tlv, p_tlv, sizeof(oam_pdu_info_t));
-    p->peer_tlv.hdr.type = INFO_TLV_TYPE_REMOTE;
-
-    /* FIXME:peer */
-    p->peer.dot3OamPeerConfigRevision = ntohs(p_tlv->tlv_revision);
-    p->peer.dot3OamPeerMaxOamPduSize = ntohs(p_tlv->max_pdu_size);
-    p->peer.dot3OamPeerMode = (p_tlv->config & CFG_MODE_ACTIVE) ? OAM_MODE_ACTIVE : OAM_MODE_PASSIVE;
-    p->peer.dot3OamPeerFunctionsSupported = (p_tlv->config >> 1); /* shift out oam-mode bit */
-    memcpy(p->peer.dot3OamPeerVendorOui, p_tlv->oui, 3);
-    p->peer.dot3OamPeerVendorInfo = ntohl(p_tlv->vendor_spec); /* FIXME:vendor */
-
-    /* set remote flags
-     * eval
-     */
-    if (flags & PDU_FLAGS_L_EVAL)
-    {
-        rmt_flags |= PDU_FLAGS_R_EVAL;
-    }
-
-    /* stable */
-    if (flags & PDU_FLAGS_L_STABLE)
-    {
-        rmt_flags |= PDU_FLAGS_R_STABLE;
-    }
-
-    /* update pdu flags */
-    PDU_FLAGS_R_SETV(p->send_flags, rmt_flags);
-
-    if (p->remote_flags != flags)
-    {
-        dot3_evt_log_s evt;
-
-        memset(&evt, 0, sizeof(evt));
-        evt.ifindex = ifindex;
-        evt.dot3OamEventLogTimestamp = xos_get_uptime();
-        evt.dot3OamEventLogLocation = EVT_REMOTE;
-
-        xdbg_log(XDBG_INFO, "[%2d] remote flags changes %02x --> %02x",
-                 ifindex, p->remote_flags, flags);
-
-        /* for other router, it might raise multiple events
-         * link failure
-         */
-        if ((flags & PDU_FLAGS_EV_LF) != (p->remote_flags & PDU_FLAGS_EV_LF) )
-        {
-            if ((flags & PDU_FLAGS_EV_LF) != PDU_FLAGS_EV_LF)
-                evt.clear_flag = TRUE;
-
-            evt.dot3OamEventLogType = EVT_LINK_FAULT;
-
-            eoam_log_set_log(&evt); /* FIXME:log */
-
-            eoam_cout_report_evt(&evt); /* need xdev param */
-        }
-
-        /* dying gasp */
-        if ((flags & PDU_FLAGS_EV_DGASP) != (p->remote_flags & PDU_FLAGS_EV_DGASP) )
-        {
-            if ((flags & PDU_FLAGS_EV_DGASP) != PDU_FLAGS_EV_DGASP)
-                evt.clear_flag = TRUE;
-
-            evt.dot3OamEventLogType = EVT_DYING_GASP;
-
-            eoam_log_set_log(&evt); /* FIXME:log */
-
-            eoam_cout_report_evt(&evt); /* need xdev param */
-        }
-
-        /* critical */
-        if ((flags & PDU_FLAGS_EV_CEVT) != (p->remote_flags & PDU_FLAGS_EV_CEVT) )
-        {
-
-            if ((flags & PDU_FLAGS_EV_CEVT) != PDU_FLAGS_EV_CEVT)
-                evt.clear_flag = TRUE;
-
-            evt.dot3OamEventLogType = EVT_CRITICAL;
-
-            eoam_log_set_log(&evt); /* FIXME:log */
-
-            eoam_cout_report_evt(&evt); /* need xdev param */
-        }
-
-        /* save remote flags */
-        p->remote_flags = flags;
     }
 
     return TRUE;
@@ -340,79 +313,6 @@ static BOOLEAN fsm_check_peer_config(ifindex_s ifindex, uint8_t code)
     return retval;
 }
 
-/**
- * invalidate packet met one of the following conditions:
- *
- * - loopback (might be drop in low layer (OSX) or OS (Linux))
- * - non-OAM pdu
- * - etc.
- *
- */
-BOOLEAN _validate_oam_pdu(fsm_port_s *p, oam_pdu_hdr_t *p_pdu, size_t pdu_size)
-{
-    uint8_t *packet = (uint8_t *) p_pdu;
-
-    if (pdu_size)
-    {
-    }
-
-    /* drop loopback */
-    if (memcmp(&packet[6], p->pmac, MAC_ADRS_SIZE) == 0)
-    {
-        /* in OSX, it will receive the loopback page, but not in Linux */
-        xdbg_log(XDBG_INFO, "drop loopback %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
-                 packet[0], packet[1], packet[2], packet[3], packet[4], packet[5],
-                 packet[6], packet[7], packet[8], packet[9], packet[10], packet[11]);
-
-        return FALSE;
-    }
-
-    /* type (0xx8809) */
-    if (ntohs(p_pdu->type) != OAM_PDU_TYPE)
-    {
-        xdbg_log(XDBG_DEBUG, "drop non-oam type (0x%04x) packet", ntohs(p_pdu->type));
-        return FALSE;
-    }
-
-    /* subtype */
-    if (p_pdu->subtype != OAM_PDU_SUBTYPE)
-    {
-        xdbg_log(XDBG_DEBUG, "drop non-oam sub-type (%d) %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
-                 p_pdu->subtype, packet[0], packet[1], packet[2], packet[3], packet[4], packet[5],
-                 packet[6], packet[7], packet[8], packet[9], packet[10], packet[11]);
-
-        return FALSE;
-    }
-
-    /* flags (reserved) */
-    if (p_pdu->flags_reserved != 0)
-    {
-        xdbg_log(XDBG_DEBUG, "drop non-oam non-zero reserved flags (0x%02x) packet", p_pdu->flags_reserved);
-        return FALSE;
-    }
-
-    /* flags */
-
-    /* code */
-
-    /**
-     * if in remote_state_valid, verify the peer is the same one by src-mac, or
-     * just drop the packet and wait the session timeout
-     */
-    if (p->remote_state_valid)
-    {
-        if (memcmp(p->peer.dot3OamPeerMacAddress, p_pdu->sa, MAC_ADRS_SIZE) != 0)
-        {
-            xdbg_log(XDBG_INFO, "session ongoing, drop oam pdu mac:%02x:%02x:%02x:%02x:%02x:%02x !!!",
-                     p_pdu->sa[0], p_pdu->sa[1], p_pdu->sa[2],
-                     p_pdu->sa[3], p_pdu->sa[4], p_pdu->sa[5]);
-            return FALSE;
-        }
-    }
-
-    return TRUE;
-}
-
 BOOLEAN _validate_oam_tlv(oam_tlv_hdr_t *p_tlv, size_t size)
 {
     size_t processed_bytes = 0;
@@ -437,6 +337,67 @@ BOOLEAN _validate_oam_tlv(oam_tlv_hdr_t *p_tlv, size_t size)
     return retval;
 }
 
+/** 
+ * _local_safisfied
+ * 
+ * The local_satisfied parameter is set by the OAM client as a result 
+ * of comparing its local configuration and the remote configuration 
+ * found in the received Local Information TLV
+ * 
+ * This indicates the OAM client finds the local and remote OAM configuration 
+ * settings are agreeable.
+ * compare:
+ *  - DTE state (parser, mux)
+ *  - oam mode
+ *  - capabilities
+ *  - oam max mtu size
+ * 
+ */
+static BOOLEAN _local_satisfied(ifindex_s ifindex, uint8_t remote_flags, oam_info_tlv_s *p_tlv)
+{
+    fsm_port_s *p = eoam_fsm_port(ifindex);
+
+    if (remote_flags) {}
+
+    /* it is not ok with both party is passive */
+    if (p->cfg.oamMode == OAM_MODE_PASSIVE &&
+        (p_tlv->config & CFG_MODE_ACTIVE) == 0)
+    {
+        xdbg_log(XDBG_ERR, "[%2d] loc unsatisfy: both passive (cfg %s) !!!",
+            ifindex, eoam_str_oam_config(p_tlv->config));
+        return FALSE;
+    }
+
+    return TRUE;
+
+#if 0
+    if (LOCAL_EQ_REMOTE(p->send_flags, remote_flags))
+        return TRUE;
+    else
+        return FALSE;
+#endif
+
+}
+
+/**
+ * _remoote_stable
+ * 
+ * remote_stable is used to indicate remote OAM client acknowledgment of and 
+ * satisfaction with local OAM state information
+ */
+static BOOLEAN _remote_stable(ifindex_s ifindex, oam_pdu_hdr_t *p_pdu)
+{
+    fsm_port_s *p = eoam_fsm_port(ifindex);
+
+    if (p == NULL)
+        return FALSE;
+
+    if (p_pdu->flags & PDU_FLAGS_L_STABLE)
+        return TRUE;
+    else
+        return FALSE;
+}
+
 /*--------------------------------------------------------------------------
  * Public Functions
  *--------------------------------------------------------------------------
@@ -452,104 +413,119 @@ BOOLEAN _validate_oam_tlv(oam_tlv_hdr_t *p_tlv, size_t size)
 oam_err_e eoam_proc_info_pdu_indication(ifindex_s ifindex, oam_pdu_hdr_t *p_pdu, 
     size_t pdu_size)
 {
-    oam_pdu_info_t *peer_local = NULL, *peer_remote = NULL;
+    oam_info_tlv_s *peer_local = NULL, *peer_remote = NULL;
     int tlv_size;
-    char buf[32];
     oam_err_e status = OAM_NO_ERROR;
     fsm_port_s *p;
     oam_tlv_hdr_t *p_tlv;
+    char zero_mac[] = {0, 0, 0, 0, 0, 0};
+    char buf[32], buf2[32];
 
     p_tlv = (oam_tlv_hdr_t *)(p_pdu + 1);
 
     if ((p = eoam_fsm_port(ifindex)) == NULL)
         return INVALID_PORT;
 
-    /* if oam admin is disabled, drop pdu */
-    if (p->cfg.oamAdminState == OAM_ADMIN_DISABLED)
-    {
-        xdbg_log(XDBG_TRACE, "[%02d] oam is disabled, drop pdu, flag:(%02x):%s",
-                 ifindex,
-                 p_pdu->flags,
-                 eoam_str_info_flags(p_pdu->flags, buf));
-        return status;
-    }
-
-    if (!_validate_oam_pdu(p, p_pdu, pdu_size))
-    {
-        xdbg_log(XDBG_DEBUG, "eoam_proc_info_pdu_indication: drop invalid pdu format or loopback !!!");
-        return INVALID_OAM_PDU;
-    }
-
     tlv_size = (int)(pdu_size - sizeof(oam_pdu_hdr_t));
 
     if (!_validate_oam_tlv(p_tlv, tlv_size))
         return INVALID_OAM_PDU;
 
-    if (p->remote_state_valid != TRUE)
-    {
-        /* new session, save remote mac */
-        memcpy(p->peer.dot3OamPeerMacAddress, p_pdu->sa, MAC_ADRS_SIZE);
-    }
-
     p->stats.oamInformationRx++;
 
-    if (!retrieve_info_pdu(p_pdu, pdu_size, &peer_local, &peer_remote))
+    /* process critical event flags */
+    procee_peer_cevt_flags(ifindex, p_pdu->flags);
+
+    /* for LF event, there is no tlv */
+    if (PDU_FLAGS_L_VALID(p_pdu->flags) == 0)
     {
-        xdbg_log(XDBG_ERR, "[%02d] rx invalid local flags (flags = 0x%02x)", ifindex,
+        if ((p_pdu->flags & PDU_FLAGS_EV_LF) != 0)
+        {
+            return OAM_NO_ERROR;
+        }
+        else
+        {
+            xdbg_log(XDBG_ERR, "[%02d] rx invalid local flags (flags = 0x%02x)", ifindex,
+                 p_pdu->flags);
+
+            return INVALID_OAM_PDU;
+        }
+    }
+
+    if (!_locate_info_tlv(p_pdu, pdu_size, &peer_local, &peer_remote))
+    {
+        xdbg_log(XDBG_ERR, "[%02d] rx pdu with no local tlv !!!", ifindex,
                  p_pdu->flags);
         return INVALID_OAM_PDU;
     }
 
-    /* only update timer with valid pdu */
+    /* only update timer with valid pdu and contain tlv */
     gettimeofday(&p->last_rx, NULL);
 
-    if (peer_local == NULL)
+    if (memcmp(p->peer_mac, zero_mac, MAC_ADRS_SIZE) == 0)
     {
-        xdbg_log(XDBG_ERR, "[%02d] rx pdu with invalid or no local tlv", ifindex,
-                 p_pdu->flags);
-        return INVALID_OAM_PDU;
-    }
-
-    /* save peer's local to remote tlv, and update send_flags because
-     * tx pdu (in eoam_fsm_step) will need the flags
-     */
-    process_peer_pdu(ifindex, p_pdu->flags, peer_local);
-
-    if (peer_remote == NULL)
-    {
-        xdbg_log(XDBG_INFO, "[%2d] len %d- rx no remote, flags (%d) flag:%s",
-                 ifindex, pdu_size,
-                 p->remote_state_valid,
+        /* at least, one party is in active mode */
+        if (p->cfg.oamMode != OAM_MODE_PASSIVE ||
+            (peer_local->config & CFG_MODE_ACTIVE) != 0)
+        {
+            xdbg_log(XDBG_INFO, "[%2d] rx pdu, remote valid, flags:%s",
+                 ifindex, 
                  eoam_str_info_flags(p_pdu->flags, buf));
 
-        eoam_fsm_step(ifindex, EV_REMOTE_STATE_VALID, p_pdu);
-    }
-    else
-    {
-        /* has both local and remote tlv */
-        if (p->remote_state_valid != TRUE)
-        {
             eoam_fsm_step(ifindex, EV_REMOTE_STATE_VALID, p_pdu);
         }
         else
         {
-            if (LOCAL_EQ_REMOTE(p->send_flags, p_pdu->flags))
+            xdbg_log(XDBG_INFO, "[%2d] rx pdu, both passive, remote invalid, flags:%s",
+                 ifindex, 
+                 eoam_str_info_flags(p_pdu->flags, buf));
+
+            eoam_fsm_step(ifindex, EV_REMOTE_STATE_VALID, NULL);
+        }
+    }
+    else
+    {
+        /* has both local and remote tlv */
+        if (_local_satisfied(ifindex, p_pdu->flags, peer_local))
+        {
+            if (p->local_stable != TRUE)
             {
-                if (p->local_stable != TRUE)
+                eoam_fsm_step(ifindex, EV_LOCAL_SATISFIED, p_pdu);
+            }
+            else
+            {
+                if (_remote_stable(ifindex, p_pdu))
                 {
-                    eoam_fsm_step(ifindex, EV_LOCAL_SATISFIED, p_pdu);
+                #if 1
+                    _eoam_fsm_update(ifindex, p_pdu, peer_local); /* FIXME:valid */
+                #endif
+
+                    eoam_fsm_step(ifindex, EV_REMOTE_STABLE, p_pdu);
                 }
                 else
                 {
-                    if (REMOTE_EQ_LOCAL(p->send_flags, p_pdu->flags))
-                    {
-                        if (p->remote_stable != TRUE)
-                            eoam_fsm_step(ifindex, EV_REMOTE_STABLE, p_pdu);
-                    }
+                    xdbg_log(XDBG_INFO, "[%2d] remote unstable state:%s remote flag:%s",
+                        ifindex, eoam_str_fsm_state(p->cur_state),
+                        eoam_str_info_flags(p_pdu->flags, buf));
+
+                    eoam_fsm_step(ifindex, EV_REMOTE_STABLE, NULL);
                 }
             }
         }
+        else
+        {
+            xdbg_log(XDBG_INFO, "[%2d] local unsatisfied state:%s loc:%s rmt:%s",
+                ifindex, eoam_str_fsm_state(p->cur_state),
+                eoam_str_info_flags(p->send_flags, buf),
+                eoam_str_info_flags(p_pdu->flags, buf2));
+
+            eoam_fsm_step(ifindex, EV_LOCAL_SATISFIED, NULL);
+        }
     }
+
+    /* copy tlv */
+    memcpy(&p->peer_tlv, peer_local, sizeof(oam_info_tlv_s));
+    p->peer_tlv.hdr.type = INFO_TLV_TYPE_REMOTE;
 
     return status;
 }
@@ -571,35 +547,19 @@ oam_err_e eoam_proc_info_pdu_indication(ifindex_s ifindex, oam_pdu_hdr_t *p_pdu,
  */
 oam_err_e eoam_proc_lpbk_pdu_indication(ifindex_s ifindex, oam_pdu_hdr_t *p_pdu, size_t pdu_size)
 {
-    /* eoam_msg_hdr_t *p_msg;
-     * oam_pdu_hdr_t *p_pdu;
-     * ifindex_s ifindex;
-     */
     oam_err_e status = OAM_NO_ERROR;
     uint8_t *cmd;
     fsm_port_s *p;
-    /*size_t pdu_size; */
     char pmac[MAC_ADRS_SIZE];
 
+    if (pdu_size) {}
 
-    /* p_msg = (eoam_msg_hdr_t *)msg_buf;
-     * p_pdu = (oam_pdu_hdr_t *)(p_msg + 1);
-     */
     cmd = (uint8_t *)(p_pdu + 1);
 
-    /*port = p_msg->port; */
     p = eoam_fsm_port(ifindex);
 
     if (p == NULL)
         return INVALID_PORT;
-
-    /*pdu_size = p_msg->length - sizeof(eoam_msg_hdr_t); */
-
-    if (!_validate_oam_pdu(p, p_pdu, pdu_size))
-    {
-        xdbg_log(XDBG_DEBUG, "eoam_proc_lpbk_pdu_indication: drop invalid pdu format or loopback !!!");
-        return INVALID_OAM_PDU;
-    }
 
     if (p->lpbk.oamLoopbackIgnoreRx != PROCESS_LPBK)
     {
@@ -658,7 +618,7 @@ oam_err_e eoam_proc_lpbk_pdu_indication(ifindex_s ifindex, oam_pdu_hdr_t *p_pdu,
     xdbg_log(XDBG_INFO, "[%2d] eoam_proc_lpbk_pdu_indication: lpbk respond info pdu",
              ifindex);
 
-    eoam_fsm_send_info_pdu(ifindex, p->cur_state);
+    eoam_fsm_send_info_pdu(ifindex);
 
     eoam_cout_lpbk_req(ifindex, p->lpbk.oamLoopbackStatus);
 
@@ -847,12 +807,6 @@ oam_err_e eoam_proc_evt_pdu_indication(ifindex_s ifindex, oam_pdu_hdr_t *p_pdu, 
     phdr_size = sizeof(oam_pdu_hdr_t);
     tlv_total_size = pdu_size - phdr_size - 2 /* seq */;
 
-    if (!_validate_oam_pdu(p, p_pdu, pdu_size))
-    {
-        xdbg_log(XDBG_DEBUG, "oam_process_event: drop invalid pdu format or loopback !!!");
-        return INVALID_OAM_PDU;
-    }
-
     if (!_validate_oam_tlv((oam_tlv_hdr_t *)p_evt_tlv, tlv_total_size))
         return INVALID_OAM_PDU;
 
@@ -865,7 +819,6 @@ oam_err_e eoam_proc_evt_pdu_indication(ifindex_s ifindex, oam_pdu_hdr_t *p_pdu, 
     p->evt_rx_seq = rx_seq;
 
     /* FIXME:tlv process multiple event tlv, not tested yet */
-    //p_tlv = (oam_tlv_hdr_t *)p_evt_tlv;
     while (processed_bytes < tlv_total_size)
     {
         if (p_evt_tlv->sym_prd.hdr.type == TLV_TYPE_END)
@@ -892,16 +845,13 @@ oam_err_e eoam_proc_evt_pdu_indication(ifindex_s ifindex, oam_pdu_hdr_t *p_pdu, 
     return status;
 }
 
-oam_err_e eoam_proc_other_pdu_indication(ifindex_s ifindex, oam_pdu_hdr_t *p_pdu, size_t pdu_size)
+oam_err_e eoam_proc_other_pdu_indication(ifindex_s ifindex, oam_pdu_hdr_t *p_pdu, 
+    size_t pdu_size)
 {
     fsm_port_s *p;
 
-    if (p_pdu)
-    {
-    }
-    if (pdu_size)
-    {
-    }
+    if (p_pdu) {}
+    if (pdu_size) {}
 
     p = eoam_fsm_port(ifindex);
 
@@ -1025,6 +975,7 @@ oam_err_e eoam_proc_get_peer(dot3_peer_s *peer)
 {
     ifindex_s ifindex;
     fsm_port_s *p;
+    oam_info_tlv_s *p_tlv ;
 
     ifindex = peer->ifindex;
     p = eoam_fsm_port(ifindex);
@@ -1032,9 +983,20 @@ oam_err_e eoam_proc_get_peer(dot3_peer_s *peer)
     if (p == NULL)
         return INVALID_PORT;
 
-    memcpy(peer, &p->peer, sizeof(dot3_peer_s));
-
+#if 1 /* FIXME:valid */
+    p_tlv = &p->peer_tlv;
     peer->ifindex = ifindex;
+    memcpy(peer->dot3OamPeerMacAddress, p->peer_mac, MAC_ADRS_SIZE);
+    peer->dot3OamPeerConfigRevision = ntohs(p_tlv->tlv_revision);
+    peer->dot3OamPeerMaxOamPduSize = ntohs(p_tlv->max_pdu_size);
+    peer->dot3OamPeerMode = (p_tlv->config & CFG_MODE_ACTIVE) ? OAM_MODE_ACTIVE : OAM_MODE_PASSIVE;
+    peer->dot3OamPeerFunctionsSupported = (p_tlv->config >> 1); /* shift out oam-mode bit */
+    memcpy(peer->dot3OamPeerVendorOui, p_tlv->oui, 3);
+    peer->dot3OamPeerVendorInfo = ntohl(p_tlv->vendor_spec); /* FIXME:vendor */
+#else
+    memcpy(peer, &p->peer, sizeof(dot3_peer_s));
+    peer->ifindex = ifindex;
+#endif
 
     return OAM_NO_ERROR;
 }
@@ -1636,7 +1598,7 @@ oam_err_e eoam_proc_report_event(eoam_rpt_evt_s *p_rpt)
                     ifindex, p->send_flags, cevt_mask, cevt_value);
 
         /* sending updated info pdu (critical event is represented in flags) */
-        eoam_fsm_send_info_pdu(ifindex, p->cur_state);
+        eoam_fsm_send_info_pdu(ifindex);
 
         if (p_rpt->no_logging != TRUE)
         {

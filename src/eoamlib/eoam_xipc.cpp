@@ -1,3 +1,4 @@
+#include <arpa/inet.h>
 
 #include "xutl_dbg.h"
 
@@ -7,9 +8,71 @@
 #include "eoam_mib.h"
 #include "eoam_log.h"
 #include "eoam_rx.h"
+#include "eoam_str.h"
 
 #include "eoam_timer.h"
 #include "eoam_fsm.h" // only for user_init
+
+/**
+ * invalidate packet met one of the following conditions:
+ *
+ * - loopback (might be drop in low layer (OSX) or OS (Linux))
+ * - non-OAM pdu
+ * - etc.
+ *
+ */
+BOOLEAN _validate_oam_pdu(fsm_port_s *p, oam_pdu_hdr_t *p_pdu, size_t pdu_size)
+{
+    uint8_t *packet = (uint8_t *) p_pdu;
+
+    if (pdu_size) {}
+
+    /* drop loopback */
+    if (memcmp(&packet[6], p->pmac, MAC_ADRS_SIZE) == 0)
+    {
+        /* in OSX, it will receive the loopback page, but not in Linux */
+        xdbg_log(XDBG_INFO, "drop loopback %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
+                 packet[0], packet[1], packet[2], packet[3], packet[4], packet[5],
+                 packet[6], packet[7], packet[8], packet[9], packet[10], packet[11]);
+
+        return FALSE;
+    }
+
+    /* type (0xx8809) */
+    if (ntohs(p_pdu->type) != OAM_PDU_TYPE)
+    {
+        xdbg_log(XDBG_DEBUG, "drop non-oam type (0x%04x) packet", ntohs(p_pdu->type));
+        return FALSE;
+    }
+
+    /* subtype */
+    if (p_pdu->subtype != OAM_PDU_SUBTYPE)
+    {
+        xdbg_log(XDBG_DEBUG, "drop non-oam sub-type (%d) %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
+                 p_pdu->subtype, packet[0], packet[1], packet[2], packet[3], packet[4], packet[5],
+                 packet[6], packet[7], packet[8], packet[9], packet[10], packet[11]);
+
+        return FALSE;
+    }
+
+    /* flags (reserved) */
+    if (p_pdu->flags_reserved != 0)
+    {
+        xdbg_log(XDBG_DEBUG, "drop non-oam non-zero reserved flags (0x%02x) packet", p_pdu->flags_reserved);
+        return FALSE;
+    }
+
+    /* flags */
+
+    /* code */
+    if (p_pdu->code > PDU_CODE_LPBK)
+    {
+        xdbg_log(XDBG_DEBUG, "drop invalid or unsupported pdu (code=%d) packet", p_pdu->code);
+        return FALSE;
+    }
+
+    return TRUE;
+}
 
 /**
  *--------------------------------------------------------------------------
@@ -104,14 +167,58 @@ xipc_status_s eoam_xipc_handle_packet(xipc_s *xipc, xipc_hdr_s *xhdr,
                               void *data, size_t *size, // FIXME
                               void *param)
 {
-    //uint8_t *packet = (uint8_t *)data;
-    //static int cnt=0;
     oam_pdu_hdr_t *p_pdu = (oam_pdu_hdr_t *) data;
     oam_err_e status = OAM_NO_ERROR;
     ifindex_s ifindex = xhdr->value;
-    
+    fsm_port_s *p = eoam_fsm_port(ifindex);
+    uint8_t rmt_flags = 0;
+    char buf[32];
+    char zero_mac[] = {0, 0, 0, 0, 0, 0};
+
     if (xipc) {}
     if (param) {}
+
+    if (p == NULL)
+    {
+        xdbg_log(XDBG_ERR, "[%02d] invalid ifindex !!!", ifindex);
+        return (xipc_status_s)INVALID_PORT;
+    }
+
+    /* if oam admin is disabled, drop pdu */
+    if (p->cfg.oamAdminState == OAM_ADMIN_DISABLED)
+    {
+        xdbg_log(XDBG_ERR, "[%02d] oam is disabled, drop pdu, flag:(%02x):%s",
+                 ifindex,
+                 p_pdu->flags,
+                 eoam_str_info_flags(p_pdu->flags, buf));
+        return (xipc_status_s)INVALID_PORT;
+    }
+
+    if (!_validate_oam_pdu(p, p_pdu, *size))
+    {
+        xdbg_log(XDBG_DEBUG, "eoam_proc_info_pdu_indication: drop invalid pdu format or loopback !!!");
+        return (xipc_status_s)INVALID_OAM_PDU;
+    }
+
+    /**
+     * if in remote_state_valid, verify the peer is the same one by src-mac, or
+     * just drop the packet and wait the session timeout
+     */
+    if (memcmp(p->peer_mac, zero_mac, MAC_ADRS_SIZE) != 0)
+    {
+        if (memcmp(p->peer_mac, p_pdu->sa, MAC_ADRS_SIZE) != 0)
+        {
+            xdbg_log(XDBG_INFO, "session ongoing, pdu  mac:%02x:%02x:%02x:%02x:%02x:%02x !!!",
+                     p_pdu->sa[0], p_pdu->sa[1], p_pdu->sa[2],
+                     p_pdu->sa[3], p_pdu->sa[4], p_pdu->sa[5]);
+
+            xdbg_log(XDBG_INFO, "session ongoing, save mac:%02x:%02x:%02x:%02x:%02x:%02x !!!",
+                     p->peer_mac[0], p->peer_mac[1], p->peer_mac[2],
+                     p->peer_mac[3], p->peer_mac[4], p->peer_mac[5]);
+
+            return (xipc_status_s)INVALID_OAM_PDU;
+        }
+    }
 
     switch (p_pdu->code)
     {
@@ -135,6 +242,31 @@ xipc_status_s eoam_xipc_handle_packet(xipc_s *xipc, xipc_hdr_s *xhdr,
             break;
     }
     
+    /* 
+     * copy remote flags 
+     */
+    if (status == OAM_NO_ERROR)
+    {
+        /* eval */
+        if (p_pdu->flags & PDU_FLAGS_L_EVAL)
+        {
+            rmt_flags |= PDU_FLAGS_R_EVAL;
+        }
+
+        /* stable */
+        if (p_pdu->flags & PDU_FLAGS_L_STABLE)
+        {
+            rmt_flags |= PDU_FLAGS_R_STABLE;
+        }
+
+        /* update pdu flags */
+        PDU_FLAGS_R_SETV(p->send_flags, rmt_flags);
+
+        /* save remote flags */
+        p->remote_flags = p_pdu->flags;
+        //xdbg_log(XDBG_INFO, "eoam_xipc_handle_packet: remote_flags = %d", p->remote_flags);
+    }
+
     return status;
 }
 

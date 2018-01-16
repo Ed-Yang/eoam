@@ -145,8 +145,10 @@ BOOLEAN counter_timer(xtimer_s *ti, void *v)
     int *ptr = (int *)v;
     
     if (ti) {}
-    
+
     *ptr = *ptr + 1;
+
+    xdbg_log(XDBG_INFO, "counter_timer: increase counter by one (%d)", *ptr);
     
     return TRUE;
 }
@@ -157,6 +159,8 @@ BOOLEAN spawn_timer(xtimer_s *ti, void *param)
     
     if (ti) {}
     
+    xdbg_log(XDBG_INFO, "spawn_timer: starting timer ...");
+
     xnet_start_timer(new_timer);
     
     return FALSE; /* foce timer to stop */
@@ -203,7 +207,7 @@ TEST(XTIMER, TimerInTimerAutoStop)
     EXPECT_TRUE(xnet_remove_timer(t));
     EXPECT_TRUE(xnet_remove_timer(timer));
     
-    EXPECT_TRUE((counter == wait_sec) || (counter == (wait_sec+1))) ;
+    EXPECT_TRUE(counter >= wait_sec) ;
     EXPECT_TRUE(xnet_stop(xnet));
     EXPECT_TRUE(xnet_close(xnet));
 }

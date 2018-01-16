@@ -6,7 +6,6 @@
 
 #include "eoam_xipc.h"
 #include "eoam_rx.h"
-//#include "eoam_params.h"
 
 static xipc_s *g_rx_xipc = NULL;
 

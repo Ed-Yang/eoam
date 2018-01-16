@@ -740,9 +740,7 @@ static BOOLEAN _xipc_process_trans(void *xnet, int sockfd, void *xipc_in)
     }
 
     /* send response. no matter success or failure, send the requested size of data to client */
-#if 1 /* rsp_size */
     if (xipc->sock_type == XIPC_STREAM && p_msg_hdr->rsp_total_size > 0)
-#endif
     {
         xdbg_log(XDBG_TRACE, "server: send reponse (rsp_size = %d)", p_msg_hdr->rsp_total_size);
 

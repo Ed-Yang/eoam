@@ -44,12 +44,6 @@ extern "C" {
 #define OAM_PARAM_RX_MODE       IGNORED_LPBK /* lpbk cap. */
 #endif
 
-#ifdef RERX_LPBK
-#ifndef OAM_PARAM_RETX_LPBK
-#define OAM_PARAM_RETX_LPBK     0 /* retransmit lpbk */
-#endif
-#endif
-
 #ifndef OAM_PARAM_OUI
 #define OAM_PARAM_OUI           {0x78, 0x7f, 0x43} /* apple */
 #endif

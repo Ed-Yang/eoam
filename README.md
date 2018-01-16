@@ -162,44 +162,49 @@ eoam server on VM-A is running with interface name "docker0".
 ```
 $ sudo ./example/eoam docker0
 
-01:07:44 [0x12959740, 0x02c041e0] xdev_open:  src mac filled by upper layer
-01:07:44 xdev_open: mac filter 02:42:37:ae:c4:07 (mask 5 bytes)
-01:07:44 [12959740] xnet_start: xnet thread is running ...
-01:07:44 xnet thread run user_init ...
-01:07:44 eoam_fsm_usr_init: init interfaces
-01:07:44 xdev_wait: wait xdev thread terminated ...
-01:07:44 [ 1] CO: loopback status - no loopback (1)
-01:07:44 [ 2] CO: loopback status - no loopback (1)
-01:07:44 [ 2] CO: state changed old FAULT --> new ACTIVE_SEND
-01:07:44 xnet thread enter loop (sec = 1, wait time: usec = 0).
-01:07:44 [ 2] remote flags changes 00 --> 28
-01:07:44 [ 2] CO: state changed old ACTIVE_SEND --> new LOC_REM
-01:07:44 [ 2] remote flags changes 28 --> 30
-01:07:44 [ 2] CO: state changed old LOC_REM --> new LOC_REM_OK
-01:07:44 [ 2] remote flags changes 30 --> 50
-01:07:44 [ 2] CO: state changed old LOC_REM_OK --> new SEND_ANY
+10:47:48.391 [0x7b712740, 0x848e6180] xdev_open:  src mac filled by upper layer
+10:47:48.391 xdev_open: mac filter 02:42:58:07:77:ee (mask 5 bytes)
+10:47:48.395 [7b712740] xnet_start: xnet thread is running ...
+10:47:48.395 xnet thread run user_init ...
+10:47:48.396 eoam_fsm_usr_init: init interfaces
+10:47:48.396 [ 2] CO: state changed old FAULT --> new ACTIVE_SEND
+10:47:48.396 xnet thread enter loop (sec = 1, wait time: usec = 0).
+10:47:48.396 xdev_wait: wait xdev thread terminated ...
+10:47:49.225 [ 2] new remote flags [0/1, 0/0]
+10:47:49.225 [ 2] rx pdu, remote valid, flags:[0/1, 0/0]
+10:47:49.225 [ 2] send local: save mac 02:42:ac:11:00:02
+10:47:49.225 [ 2] CO: state changed old ACTIVE_SEND --> new LOC_REM
+10:47:50.265 [ 2] CO: state changed old LOC_REM --> new LOC_REM_OK
+10:47:50.395 [ 2] SEND INFO: flags [1/0, 0/1]
+10:47:51.201 [ 2] remote flags changes [0/1, 0/0] --> [0/1, 1/0]
+10:47:51.201 [ 2] remote unstable state:LOC_REM_OK remote flag:[0/1, 1/0]
+10:47:51.201 [ 2] CO: state changed old LOC_REM_OK --> new SEND_ANY
+10:47:52.241 [ 2] remote flags changes [0/1, 1/0] --> [1/0, 1/0]
+10:47:52.395 [ 2] SEND INFO: flags [1/0, 1/0]
+
 ```
 VM-B-Server:
 ```
 # ./example/eoam
 
-17:07:33 [0x9213a740, 0x00b315d0] xdev_open:  src mac filled by upper layer
-17:07:33 xdev_open: mac filter 02:42:ac:11:00:02 (mask 5 bytes)
-17:07:33 xnet thread run user_init ...
-17:07:33 eoam_fsm_usr_init: init interfaces
-17:07:33 [ 1] CO: loopback status - no loopback (1)
-17:07:33 [ 2] CO: loopback status - no loopback (1)
-17:07:33 [ 2] CO: state changed old FAULT --> new ACTIVE_SEND
-17:07:33 xnet thread enter loop (sec = 1, wait time: usec = 0).
-17:07:33 [9213a740] xnet_start: xnet thread is running ...
-17:07:33 xdev_wait: wait xdev thread terminated ...
-17:07:44 [ 2] remote flags changes 00 --> 08
-17:07:44 [ 2] len 34- rx no remote, flags (0) flag:[0/1, 0/0]
-17:07:44 [ 2] CO: state changed old ACTIVE_SEND --> new LOC_REM
-17:07:44 [ 2] remote flags changes 08 --> 28
-17:07:44 [ 2] CO: state changed old LOC_REM --> new LOC_REM_OK
-17:07:44 [ 2] remote flags changes 28 --> 50
-17:07:44 [ 2] CO: state changed old LOC_REM_OK --> new SEND_ANY
+02:47:17.176 [0xa2367740, 0x015ab570] xdev_open:  src mac filled by upper layer
+02:47:17.176 xdev_open: mac filter 02:42:ac:11:00:02 (mask 5 bytes)
+02:47:17.177 [a2367740] xnet_start: xnet thread is running ...
+02:47:17.177 xnet thread run user_init ...
+02:47:17.177 eoam_fsm_usr_init: init interfaces
+02:47:17.178 [ 2] CO: state changed old FAULT --> new ACTIVE_SEND
+02:47:17.178 xnet thread enter loop (sec = 1, wait time: usec = 0).
+02:47:17.178 xdev_wait: wait xdev thread terminated ...
+02:47:19.179 [ 2] SEND INFO: flags [0/1, 0/0]
+02:47:50.457 [ 2] new remote flags [1/0, 0/1]
+02:47:50.457 [ 2] rx pdu, remote valid, flags:[1/0, 0/1]
+02:47:50.457 [ 2] send local: save mac 02:42:58:07:77:02
+02:47:50.457 [ 2] CO: state changed old ACTIVE_SEND --> new LOC_REM
+02:47:51.180 [ 2] SEND INFO: flags [0/1, 1/0]
+02:47:51.497 [ 2] CO: state changed old LOC_REM --> new LOC_REM_OK
+02:47:52.180 [ 2] SEND INFO: flags [1/0, 1/0]
+02:47:52.433 [ 2] remote flags changes [1/0, 0/1] --> [1/0, 1/0]
+02:47:52.433 [ 2] CO: state changed old LOC_REM_OK --> new SEND_ANY
 ```
 
 ### Run Test Client
@@ -268,17 +273,30 @@ set config success.
 
 SHELL-A-Server:
 ```
-01:11:47 [ 2] oam admin: On-->On mode: active-->passive (tlv rev 1)
-01:11:52 [ 2] oam admin: On-->On mode: passive-->active (tlv rev 2)
+10:49:38.924 [ 2] adm:On->On mo:active->passive (rev 1), next=PASSIVE_WAIT
+10:49:38.924 [ 2] CO: state changed old SEND_ANY --> new PASSIVE_WAIT
+10:49:39.257 [ 2] new remote flags [1/0, 1/0]
+10:49:39.257 [ 2] rx pdu, remote valid, flags:[1/0, 1/0]
+10:49:39.257 [ 2] passive wait: save mac 02:42:ac:11:00:02
+10:49:39.257 [ 2] CO: state changed old PASSIVE_WAIT --> new LOC_REM
+10:49:39.394 [ 2] SEND INFO: flags [0/1, 1/0]
+10:49:40.193 [ 2] remote flags changes [1/0, 1/0] --> [1/0, 0/1]
+10:49:40.193 [ 2] CO: state changed old LOC_REM --> new LOC_REM_OK
+10:49:40.395 [ 2] SEND INFO: flags [1/0, 1/0]
+10:49:41.233 [ 2] remote flags changes [1/0, 0/1] --> [1/0, 1/0]
+10:49:41.233 [ 2] CO: state changed old LOC_REM_OK --> new SEND_ANY
 
 ```
 
 SHELL-B-Server:
 ```
-17:11:47 [ 2] rev 1 cfg (0d ->  0d), state (00 -> 00)
-17:11:47 [ 2] peer config: M:A/U:-/L:Y/E:Y/V:- state: mux:fwd, par:fwd
-17:11:52 [ 2] rev 2 cfg (0c ->  0c), state (00 -> 00)
-17:11:52 [ 2] peer config: M:P/U:-/L:Y/E:Y/V:- state: mux:fwd, par:fwd
+02:49:39.457 [ 2] remote flags changes [1/0, 1/0] --> [0/1, 1/0]
+02:49:39.457 [ 2] remote unstable state:SEND_ANY remote flag:[0/1, 1/0]
+02:49:39.457 [ 2] CO: state changed old SEND_ANY --> new LOC_REM_OK
+02:49:40.180 [ 2] SEND INFO: flags [1/0, 0/1]
+02:49:40.497 [ 2] remote flags changes [0/1, 1/0] --> [1/0, 1/0]
+02:49:40.497 [ 2] CO: state changed old LOC_REM_OK --> new SEND_ANY
+02:49:41.179 [ 2] SEND INFO: flags [1/0, 1/0]
 ```
 
 ## Remote Loopback
@@ -294,25 +312,25 @@ set loopback success.
 ```
 SHELL-A-Server:
 ```
-01:12:48 [ 2] rev 1 cfg (0d ->  0d), state (00 -> 05)
-01:12:48 [ 2] peer config: M:A/U:-/L:Y/E:Y/V:- state: mux:drop, par:lpbk
-01:12:48 [ 2] CO: loopback status - remote loopback (3)
-01:12:54 [ 2] rev 2 cfg (0d ->  0d), state (05 -> 00)
-01:12:54 [ 2] peer config: M:A/U:-/L:Y/E:Y/V:- state: mux:fwd, par:fwd
-01:12:54 [ 2] CO: loopback status - no loopback (1)
+10:53:06.637 [ 2] rev 1 cfg (0d ->  0d), state (00 -> 05)
+10:53:06.637 [ 2] peer config: M:A/U:-/L:Y/E:Y/V:- state: mux:drop, par:lpbk
+10:53:06.637 [ 2] CO: loopback status - remote loopback (3)
+10:53:30.665 [ 2] rev 2 cfg (0d ->  0d), state (05 -> 00)
+10:53:30.665 [ 2] peer config: M:A/U:-/L:Y/E:Y/V:- state: mux:fwd, par:fwd
+10:53:30.665 [ 2] CO: loopback status - no loopback (1)
 ```
 SHELL-B-Server:
 ```
-17:12:48 [ 2] eoam_proc_lpbk_pdu_indication: loopback cmd 1
-17:12:48 [ 2] eoam_proc_lpbk_pdu_indication: lpbk respond info pdu
-17:12:48 [ 2] CO: loopback status - local loopback (5)
-17:12:50 [ 2] rev 4 cfg (0d ->  0d), state (00 -> 02)
-17:12:50 [ 2] peer config: M:A/U:-/L:Y/E:Y/V:- state: mux: fwd, par:drop
-17:12:54 [ 2] eoam_proc_lpbk_pdu_indication: loopback cmd 2
-17:12:54 [ 2] eoam_proc_lpbk_pdu_indication: lpbk respond info pdu
-17:12:54 [ 2] CO: loopback status - no loopback (1)
-17:12:55 [ 2] rev 6 cfg (0d ->  0d), state (02 -> 00)
-17:12:55 [ 2] peer config: M:A/U:-/L:Y/E:Y/V:- state: mux:fwd, par:fwd
+02:53:06.633 [ 2] eoam_proc_lpbk_pdu_indication: loopback cmd 1
+02:53:06.633 [ 2] eoam_proc_lpbk_pdu_indication: lpbk respond info pdu
+02:53:06.633 [ 2] CO: loopback status - local loopback (5)
+02:53:08.401 [ 2] rev 4 cfg (0d ->  0d), state (00 -> 02)
+02:53:08.401 [ 2] peer config: M:A/U:-/L:Y/E:Y/V:- state: mux: fwd, par:drop
+02:53:30.561 [ 2] eoam_proc_lpbk_pdu_indication: loopback cmd 2
+02:53:30.561 [ 2] eoam_proc_lpbk_pdu_indication: lpbk respond info pdu
+02:53:30.561 [ 2] CO: loopback status - no loopback (1)
+02:53:32.433 [ 2] rev 6 cfg (0d ->  0d), state (02 -> 00)
+02:53:32.433 [ 2] peer config: M:A/U:-/L:Y/E:Y/V:- state: mux:fwd, par:fwd
 ```
 
 ## Link Event
@@ -325,13 +343,13 @@ set link event success.
 ```
 SHELL-A-Server:
 ```
-01:13:51 [0x114b9700][ 2] eoam_proc_report_event: type 1
-01:13:51 [ 2] CO: raise l-events: type 1 ts 17893 loc 1 value 200 r-total 10200, e-total 1
+10:54:46.027 [0x7a272700][ 2] eoam_proc_report_event: type 1
+10:54:46.027 [ 2] CO: raise l-events: type 1 ts 30722 loc 1 value 200 r-total 10200, e-total 1
 ```
 SHELL-B-Server:
 ```
-17:13:51 [ 2] rx evt pdu: seq 0 ts 47858 type 1 value 0:200
-17:13:51 [ 2] CO: raise l-events: type 1 ts 17893 loc 2 value 200 r-total 10200, e-total 1
+02:54:46.081 [ 2] rx evt pdu: seq 0 ts 45076 type 1 value 0:200
+02:54:46.081 [ 2] CO: raise l-events: type 1 ts 30722 loc 2 value 200 r-total 10200, e-total 1
 ```
 ## Critical Event
 SHELL-A-Client:
@@ -346,17 +364,19 @@ clear critical success.
 ```
 SHELL-A-Server:
 ```
-01:14:41 [0x114b9700][ 2] eoam_proc_report_event: type 256
-01:14:41 [ 2] CO: raise c-events: type 256 ts 17943 loc 1 r-total 1, e-total 1
-01:14:44 [0x114b9700][ 2] eoam_proc_report_event: type 256
-01:14:44 [ 2] CO: clear c-events: type 256 ts 17947 loc 1 r-total 0, e-total 0
+10:55:54.023 [0x7a272700][ 2] eoam_proc_report_event: type 256
+10:55:54.023 [ 2] SEND INFO: flags [1/0, 1/0]
+10:55:54.023 [ 2] CO: raise c-events: type 256 ts 30790 loc 1 r-total 1, e-total 1
+10:55:57.883 [0x7a272700][ 2] eoam_proc_report_event: type 256
+10:55:57.883 [ 2] SEND INFO: flags [1/0, 1/0]
+10:55:57.883 [ 2] CO: clear c-events: type 256 ts 30794 loc 1 r-total 0, e-total 0
 ```
 SHELL-B-Server:
 ```
-17:14:41 [ 2] remote flags changes 50 --> 51
-17:14:41 [ 2] CO: raise c-events: type 256 ts 17943 loc 2 r-total 0, e-total 0
-17:14:44 [ 2] remote flags changes 51 --> 50
-17:14:44 [ 2] CO: clear c-events: type 256 ts 17947 loc 2 r-total 0, e-total 0
+02:55:54.097 [ 2] remote flags changes [1/0, 1/0] --> [1/0, 1/0]
+02:55:54.097 [ 2] CO: raise c-events: type 256 ts 30790 loc 2 r-total 0, e-total 0
+02:55:57.945 [ 2] remote flags changes [1/0, 1/0] --> [1/0, 1/0]
+02:55:57.945 [ 2] CO: clear c-events: type 256 ts 30794 loc 2 r-total 0, e-total 0
 ```
 ## Log and Statistics
 SHELL-A-Client:
@@ -370,7 +390,7 @@ ifindex:2 (state = SEND_ANY)
   rev:2 oui:11:11:11 func:0x06
  Loopback:
   lpbk-status:no loopback, ignore-lpbk:Off
-  info-pdu:(tx 433: rx 434) lpbk:(tx 2:rx 0)
+  info-pdu:(tx 600: rx 604) lpbk:(tx 2:rx 0)
  Events:  LF:Off, Dying Gasp:Off, Critical:Off
   err-symbols-period evt win:(1000) threshold:(1) enable:On
   err-frame--period evt win:(1000) threshold:(1) enable:On
@@ -379,8 +399,8 @@ ifindex:2 (state = SEND_ANY)
 
 time     port idx  type loc window thresh value   run-total e-total
 ======== ==== ===  ==== === ====== ====== ======= ========= =========
-   17893   2    1    1    1 1000   1      200     10200     1        
-   17943   2    2  256    1 NA     NA     NA      NA                1
+   30722   2    1    1    1 1000   1      200     10200     1        
+   30790   2    2  256    1 NA     NA     NA      NA                1
 
 ```
 TODO

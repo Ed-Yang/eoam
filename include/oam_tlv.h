@@ -71,6 +71,14 @@ typedef struct
         *(uint8_t *)(x + 1) = (v >> 8) & 0x3; \
     } while (0);
 
+/**
+ * oam_info_tlv_s
+ * 
+ * @param tlv_revision
+ *      The value of this field shall start at zero and be incremented each time 
+ *      something (state:par/nux, config:oam mode,lpbk) in the Information 
+ *      TLV changes.
+ */
 typedef struct
 {
     oam_tlv_hdr_t hdr;
@@ -79,10 +87,9 @@ typedef struct
     uint8_t state; /*0-1: par, 2: mux, 3-7: reserved */
     uint8_t config;
     uint16_t max_pdu_size;  /* reserved:6, pdu_size: 10 */
-
     uint8_t oui[3];
     uint32_t vendor_spec;
-} oam_pdu_info_t;
+} oam_info_tlv_s;
 
 /*
  * Event Notification OAMPDU

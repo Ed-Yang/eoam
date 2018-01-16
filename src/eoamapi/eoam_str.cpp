@@ -146,7 +146,9 @@ const char *eoam_str_events(oam_fsm_evt_e evt)
     case EV_REMOTE_STABLE:
         ptr = "EV_REMOTE_STABLE";
         break;
-
+    case EV_LOST_TIMER:
+        ptr = "EV_LOST_TIMER";
+        break;
     default:
         ptr = "NA";
         break;

@@ -1,7 +1,6 @@
 #include "eoam_timer.h"
 #include "eoam_cout.h"
 #include "eoam_fsm.h"
-//#include "eoam_params.h"
 
 BOOLEAN eoam_fsm_timer_handler(xtimer_s *xtimer, void *param)
 {

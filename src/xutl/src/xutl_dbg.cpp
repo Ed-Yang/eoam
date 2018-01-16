@@ -21,14 +21,18 @@ void xdbg_log(xdbg_prio_e prio, const char *format, ...)
     {
         time_t t = time(NULL);
         struct tm *tme, ti;
+        struct timeval tv;
+        uint32_t msec;
 
         memset(&ti, 0, sizeof(ti));
         memset(g_logbuf, 0, sizeof(g_logbuf));
 
         tme = localtime_r(&t, &ti);
+        gettimeofday(&tv, NULL);
+        msec = tv.tv_usec / 1000;
 
-        taglen = snprintf(g_logbuf, MAX_TAG_LEN, "\n%02d:%02d:%02d ",
-                          tme->tm_hour, tme->tm_min, tme->tm_sec);
+        taglen = snprintf(g_logbuf, MAX_TAG_LEN, "\n%02d:%02d:%02d.%03d ",
+                          tme->tm_hour, tme->tm_min, tme->tm_sec, msec);
 
         va_start(arglist, format);
         if ((retval = vsnprintf(&g_logbuf[taglen], XUTL_DBG_BUFSIZE - taglen,

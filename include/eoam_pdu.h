@@ -10,6 +10,11 @@
 #ifndef __EOAM_PDU_H
 #define __EOAM_PDU_H
 
+/* PDU_LF_INFO: 
+ * Only Information OAMPDUs with the Link Fault critical link event set and
+ * without Information TLVs are allowed to be transmitted; only Information OAMPDUs 
+ * are allowed to be received.
+ */
 #define PDU_LF_INFO     0
 #define PDU_RX_INFO     1
 #define PDU_INFO        2
