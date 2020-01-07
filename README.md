@@ -426,6 +426,10 @@ Welcome any comment.
 Edward Yang 
 <edwardyangyang@hotmail.com>
 
+# License
+
+This project is licensed under the terms of the MIT license.
+
 
 
 
