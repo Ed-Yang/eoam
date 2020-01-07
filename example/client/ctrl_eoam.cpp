@@ -434,8 +434,10 @@ int main(int argc, char *argv[])
 		    set_levt_flag = atoi(optarg);
 		    break;
 
-		case 'C':
+		case 'C': /* clear and show status */
 			clear_all_flag = 1;
+            status_flag = 1; 
+            break;
 		case 'x':
 		    status_flag = 1;
 		    break;
