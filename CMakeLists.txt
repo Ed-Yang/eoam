@@ -14,6 +14,9 @@ include_directories(${GTEST_INCLUDE_DIRS})
 # vscode cmake tools
 include(CMakeToolsHelpers OPTIONAL)
 
+# set output binary folder
+set(EXECUTABLE_OUTPUT_PATH ${CMAKE_BINARY_DIR})
+
 # include
 include_directories("./" "./src" "./include" "./src/xutl/include")
 include_directories("./external/uthash/include" "./external/getopt/include")
