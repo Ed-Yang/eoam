@@ -179,9 +179,11 @@ static void procee_peer_cevt_flags(ifindex_s ifindex, uint8_t flags)
                     eoam_str_info_flags(flags, info_buf2));
     }
     
-    /* for other router, it might raise multiple events
-        * link failure
-        */
+    /*
+     * for other router, it might raise multiple events at the same time
+     */
+    
+    /* link failure */
     if ((flags & PDU_FLAGS_EV_LF) != (p->remote_flags & PDU_FLAGS_EV_LF) )
     {
         if ((flags & PDU_FLAGS_EV_LF) != PDU_FLAGS_EV_LF)
