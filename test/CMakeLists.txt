@@ -25,6 +25,6 @@ file(GLOB TEST_SRC "./*.cpp")
 add_executable(gt_eoam ${TEST_SRC} ${EOAMAPI_SRC})
 
 #target_link_libraries(gt_eoam eoamlib eoamapi xutl ${GTEST_BOTH_LIBRARIES})
-target_link_libraries(gt_eoam eoamlib xutl ${GTEST_BOTH_LIBRARIES})
+target_link_libraries(gt_eoam eoamlib xutl ${GTEST_BOTH_LIBRARIES} ${GCC_COVERAGE_LINK_FLAGS})
 
-add_test(gt-eoam gt_eoam)
+add_test(gt-eoam ${EXECUTABLE_OUTPUT_PATH}/gt_eoam)

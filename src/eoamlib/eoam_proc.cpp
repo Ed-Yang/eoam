@@ -1182,7 +1182,7 @@ oam_err_e eoam_proc_set_lpbk(dot3_lpbk_cfg_s *lpbk_cfg)
         return OP_NOT_ALLOWED;
     }
 
-    if (lpbk_cfg->lpbk_timeout < 1 &&
+    if (lpbk_cfg->lpbk_timeout < 1 ||
         lpbk_cfg->lpbk_timeout > 10)
     {
         xdbg_log(XDBG_ERR, "[%02d] eoam_proc_set_lpbk: invaid lpbk timeout %d !!!",

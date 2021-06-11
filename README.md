@@ -403,7 +403,8 @@ time     port idx  type loc window thresh value   run-total e-total
    30790   2    2  256    1 NA     NA     NA      NA                1
 
 ```
-TODO
+
+# TODO
 
 The xutl library is meant for fast prototyping or small scale network application(s),
 so it do not utilize modern epoll or kqueue system call.  If the performance is
@@ -413,6 +414,14 @@ important, it might be replaced by other networking library.
 * Cross-compiling for Raspberry Pi
 * Variable Request
 * send Organization Specific OAMPDUs
+
+# MISC
+
+* Run in user mode (Linux only)
+
+    ```shell
+    sudo setcap cap_net_raw,cap_net_admin=eip <excutable>
+    ```
 
 # Reference
 
