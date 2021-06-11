@@ -326,9 +326,10 @@ xdev_s *xdev_open(char *dev_name, xdev_mac_s *src_mac_flt, BOOLEAN fill_smac,
     void *param)
 {
     xdev_s *xdev;
-    char *dev;
+    char *dev = NULL, namebuf[XDEV_MAX_NAME+1] = {0};
     int len;
     char *filter_exp = (char *)param;
+    pcap_if_t *all_devs = NULL;
 
     if (filter_exp) {}
 
@@ -365,7 +366,12 @@ xdev_s *xdev_open(char *dev_name, xdev_mac_s *src_mac_flt, BOOLEAN fill_smac,
 
     if (dev_name == NULL)
     {
-        dev = pcap_lookupdev(xdev->errbuf);
+        if (pcap_findalldevs(&all_devs, xdev->errbuf) == 0)
+        {
+            strncpy(namebuf, all_devs->name, XDEV_MAX_NAME);
+            dev = namebuf;
+            pcap_freealldevs(all_devs);
+        }
     }
     else
     {

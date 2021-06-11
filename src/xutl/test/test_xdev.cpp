@@ -230,6 +230,25 @@ void test_open_stop()
     }
 }
 
+void test_first_dev()
+{
+    xdev_s *xdev ;
+    char *filter = NULL;
+    
+    xdbg_log(XDBG_INFO, "######## test_first_dev");
+    
+    xdev = xdev_open(NULL, NULL, TRUE, filter);
+
+    if (xdev == NULL)
+    {
+        xdbg_log(XDBG_INFO, "test_first_dev: dev_open failed !!!");
+    }
+    else
+    {
+        xdev_stop(xdev);
+        xdev_close(xdev);
+    }
+}
 
 int main(int argc, char *argv[])
 {
@@ -241,8 +260,8 @@ int main(int argc, char *argv[])
 
     xdbg_set_priority(XDBG_INFO);
  
-
     test_open_close();
+    test_first_dev();
     test_open_stop();
     full_thread(&argc);
     test_full();
